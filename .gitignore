@@ -1,0 +1,6 @@
+assets/*.pdf
+!assets/.gitkeep
+test-data/*.pdf
+!test-data/.gitkeep
+node_modules/
+.DS_Store

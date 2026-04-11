@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF BBox Viewer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>PDF Bounding Box Viewer</h1>
+      <p>Load a local PDF + AnchorGrid response JSON and visualize detections.</p>
+    </header>
+
+    <section class="controls">
+      <label>
+        PDF path:
+        <input id="pdfPath" type="text" value="./test-data/Doors-v1.pdf" />
+      </label>
+      <div class="file-picker">
+        <button id="choosePdfBtn" type="button">Choose PDF</button>
+        <span id="pdfFileName" class="file-name">none</span>
+        <input id="pdfFile" class="hidden-input" type="file" accept=".pdf,application/pdf" />
+      </div>
+      <label>
+        Scale:
+        <input id="scaleInput" type="number" step="0.1" min="0.2" max="4" value="1.0" />
+      </label>
+      <button id="loadSampleBtn" type="button">Load sample JSON</button>
+      <button id="loadBtn">Load</button>
+    </section>
+
+    <section class="json-input-wrap">
+      <label for="jsonInput">Detection JSON input</label>
+      <textarea
+        id="jsonInput"
+        spellcheck="false"
+        placeholder='Paste full API response or an object list with bbox/page fields...'
+      ></textarea>
+      <p class="hint">
+        Supports full response payloads (`result.doors`, `result.toilets`, etc.) or any arrays of objects containing
+        `bbox: {x1,y1,x2,y2}` and `page`.
+      </p>
+    </section>
+
+    <section class="controls">
+      <label>
+        Page:
+        <select id="pageSelect"></select>
+      </label>
+      <label>
+        Show labels:
+        <input id="showLabels" type="checkbox" checked />
+      </label>
+      <span id="cursorCoords" class="coords"></span>
+      <span id="summary"></span>
+    </section>
+
+    <section class="docs-note">
+      <h3>How coordinates are detected</h3>
+      <p>
+        AnchorGrid detections are returned in PDF points. The model runs on a high-resolution internal render, then
+        maps detections back to PDF space (`x1`, `y1`, `x2`, `y2`). This viewer projects those PDF points into screen
+        pixels with `pdf.js` (`convertToViewportPoint`) and draws overlays at the transformed coordinates.
+      </p>
+    </section>
+
+    <main>
+      <div class="split">
+        <div id="viewerWrap" class="viewer-wrap">
+          <canvas id="pdfCanvas"></canvas>
+          <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+          <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <span>Loading PDF...</span>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <h3>Objects</h3>
+          <p class="muted">Hover a box to highlight coordinates here.</p>
+          <ul id="objectList" class="object-list"></ul>
+
+          <h3>Selected</h3>
+          <pre id="objectDetails" class="object-details">No object selected.</pre>
+        </aside>
+      </div>
+    </main>
+
+    <script type="module" src="./viewer.js"></script>
+  </body>
+</html>
