@@ -1,6 +1,7 @@
 # PDF BBox Viewer
 
 Offline PDF bounding-box viewer for detection JSON and CSV.
+<img width="2994" height="1702" alt="CleanShot 2026-04-13 at 23 57 27@2x" src="https://github.com/user-attachments/assets/af0977f8-05ee-4a74-bc30-f612f05aed8f" />
 
 ## Run
 
