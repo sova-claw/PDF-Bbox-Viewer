@@ -77,12 +77,6 @@ p {
   gap: 8px;
 }
 
-.header-link-btn {
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
-}
-
 button,
 input,
 select,
@@ -112,6 +106,9 @@ button:disabled {
 }
 
 .secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text);
   background: var(--surface-soft);
 }
@@ -166,23 +163,117 @@ main {
   margin-bottom: 8px;
 }
 
-.pager-controls {
-  display: grid;
-  grid-template-columns: auto minmax(92px, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
+.pager-wrap {
+  margin-bottom: 10px;
 }
 
-.pager-controls #pageSelect {
-  min-width: 0;
+.pager-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.pager-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 85%, var(--surface) 15%), var(--surface-soft));
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 35%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.08s ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-soft));
+}
+
+.pager-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.pager-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.pager-btn-prev {
+  justify-self: start;
+}
+
+.pager-btn-next {
+  justify-self: end;
+}
+
+.pager-chevron {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: -2px;
+}
+
+.pager-label {
+  line-height: 1;
+}
+
+.pager-middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: min(100%, 168px);
+}
+
+.pager-indicator {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
   text-align: center;
 }
 
-.page-indicator {
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--muted);
+.pager-select {
+  width: 100%;
+  min-width: 120px;
+  max-width: 200px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.pager-select:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.pager-hint {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.92em;
 }
 
 .toggles {
@@ -215,6 +306,20 @@ main {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.demo-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.demo-btn-group .demo-action-btn {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+  min-height: 40px;
 }
 
 .file-name {
@@ -409,6 +514,23 @@ main {
   z-index: 10;
 }
 
+.cursor-tooltip {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  min-width: 190px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #4e73c6;
+  background: rgba(12, 20, 44, 0.96);
+  color: #eaf0ff;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(8, 12, 24, 0.32);
+}
+
 .loader {
   position: absolute;
   inset: 0;
@@ -493,6 +615,14 @@ main {
   white-space: pre-wrap;
   background: color-mix(in srgb, var(--surface-soft) 70%, var(--surface) 30%);
   font-size: 12px;
+}
+
+.inspector-block {
+  margin-bottom: 4px;
+}
+
+.inspector-details {
+  min-height: 86px;
 }
 
 .hidden {

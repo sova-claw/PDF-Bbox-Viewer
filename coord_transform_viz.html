@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Coordinate Transform Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; background: #0e1117; color: #e2e8f0; min-height: 100vh; padding: 32px 24px; }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; color: #f8fafc; }
+  .subtitle { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .panel { background: #1a1f2e; border: 1px solid #2d3448; border-radius: 12px; padding: 20px; }
+  .panel h2 { font-size: 13px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; }
+
+  /* Controls */
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  label { font-size: 13px; color: #94a3b8; display: flex; flex-direction: column; gap: 6px; }
+  label span { color: #cbd5e1; font-weight: 500; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  input[type=range] { width: 100%; accent-color: #6366f1; }
+  input[type=number] {
+    background: #0e1117; border: 1px solid #2d3448; border-radius: 6px;
+    color: #e2e8f0; font-size: 13px; padding: 6px 10px; width: 100%;
+  }
+  .scale-row { display: flex; align-items: center; gap: 12px; }
+  .scale-val { font-size: 22px; font-weight: 700; color: #6366f1; min-width: 40px; }
+
+  /* Canvas area */
+  .canvas-wrap { position: relative; }
+  canvas { display: block; border-radius: 8px; }
+  #pdfCanvas { background: #ffffff; }
+  #overlayCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+
+  /* Math panel */
+  .math { display: flex; flex-direction: column; gap: 10px; }
+  .math-block {
+    background: #0e1117; border: 1px solid #2d3448; border-radius: 8px;
+    padding: 14px 16px; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.7;
+  }
+  .step-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #6366f1; margin-bottom: 6px; font-family: Inter, sans-serif; }
+  .val { color: #f472b6; font-weight: 600; }
+  .op  { color: #94a3b8; }
+  .res { color: #34d399; font-weight: 700; }
+  .dim { color: #64748b; font-size: 12px; }
+
+  /* Legend */
+  .legend { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: #94a3b8; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: middle; }
+
+  @media (max-width: 700px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>JSON BBox → Screen Pixels</h1>
+<p class="subtitle">Drag the corners or adjust sliders to see how pt values become screen rectangles.</p>
+
+<div class="layout">
+
+  <!-- LEFT: controls + canvas -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    <div class="panel">
+      <h2>Inputs</h2>
+      <div class="controls">
+
+        <div>
+          <label><span>Scale (zoom factor)</span></label>
+          <div class="scale-row" style="margin-top:6px;">
+            <input type="range" id="scaleSlider" min="0.5" max="3" step="0.05" value="1.5">
+            <div class="scale-val" id="scaleDisplay">1.50</div>
+          </div>
+        </div>
+
+        <div>
+          <label><span>BBox corners (PDF points, top-left origin)</span></label>
+          <div class="row" style="margin-top:6px;">
+            <label>x1 (pt)<input type="number" id="x1" value="60" step="5"></label>
+            <label>y1 (pt)<input type="number" id="y1" value="50" step="5"></label>
+            <label>x2 (pt)<input type="number" id="x2" value="160" step="5"></label>
+            <label>y2 (pt)<input type="number" id="y2" value="130" step="5"></label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Page preview</h2>
+      <div class="canvas-wrap" style="display:inline-block;">
+        <canvas id="pdfCanvas"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#334155;border:1px solid #475569;"></span>PDF page (240 × 320 pt)</span>
+        <span><span class="dot" style="background:#6366f1;opacity:.35;border:1px solid #6366f1;"></span>BBox</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: math steps -->
+  <div class="panel">
+    <h2>Transform steps</h2>
+    <div class="math" id="mathPanel"></div>
+  </div>
+
+</div>
+
+<script>
+const PAGE_W_PT = 240;
+const PAGE_H_PT = 320;
+
+const scaleSlider  = document.getElementById('scaleSlider');
+const scaleDisplay = document.getElementById('scaleDisplay');
+const inX1 = document.getElementById('x1');
+const inY1 = document.getElementById('y1');
+const inX2 = document.getElementById('x2');
+const inY2 = document.getElementById('y2');
+const pdfCanvas     = document.getElementById('pdfCanvas');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const mathPanel     = document.getElementById('mathPanel');
+
+function getInputs() {
+  return {
+    scale: parseFloat(scaleSlider.value),
+    x1: parseFloat(inX1.value) || 0,
+    y1: parseFloat(inY1.value) || 0,
+    x2: parseFloat(inX2.value) || 0,
+    y2: parseFloat(inY2.value) || 0,
+  };
+}
+
+function compute({ scale, x1, y1, x2, y2 }) {
+  const x1px = x1 * scale, y1px = y1 * scale;
+  const x2px = x2 * scale, y2px = y2 * scale;
+  const left   = Math.min(x1px, x2px);
+  const top    = Math.min(y1px, y2px);
+  const width  = Math.abs(x2px - x1px);
+  const height = Math.abs(y2px - y1px);
+  const pageWpx = PAGE_W_PT * scale;
+  const pageHpx = PAGE_H_PT * scale;
+  return { x1px, y1px, x2px, y2px, left, top, width, height, pageWpx, pageHpx };
+}
+
+function f(n) { return n.toFixed(1); }
+
+function renderMath(inp, out) {
+  const { scale, x1, y1, x2, y2 } = inp;
+  const { x1px, y1px, x2px, y2px, left, top, width, height, pageWpx, pageHpx } = out;
+
+  mathPanel.innerHTML = `
+    <div class="math-block">
+      <div class="step-label">① Raw JSON values (PDF points)</div>
+      x1 = <span class="val">${f(x1)}</span> pt &nbsp; y1 = <span class="val">${f(y1)}</span> pt<br>
+      x2 = <span class="val">${f(x2)}</span> pt &nbsp; y2 = <span class="val">${f(y2)}</span> pt<br>
+      <span class="dim">Origin: top-left corner of the page</span>
+    </div>
+
+    <div class="math-block">
+      <div class="step-label">② Apply scale → screen pixels</div>
+      x1_px <span class="op">= ${f(x1)} × ${f(scale)} =</span> <span class="res">${f(x1px)} px</span><br>
+      y1_px <span class="op">= ${f(y1)} × ${f(scale)} =</span> <span class="res">${f(y1px)} px</span><br>
+      x2_px <span class="op">= ${f(x2)} × ${f(scale)} =</span> <span class="res">${f(x2px)} px</span><br>
+      y2_px <span class="op">= ${f(y2)} × ${f(scale)} =</span> <span class="res">${f(y2px)} px</span>
+    </div>
+
+    <div class="math-block">
+      <div class="step-label">③ Build rectangle (normalize corners)</div>
+      left   <span class="op">= min(${f(x1px)}, ${f(x2px)}) =</span> <span class="res">${f(left)} px</span><br>
+      top    <span class="op">= min(${f(y1px)}, ${f(y2px)}) =</span> <span class="res">${f(top)} px</span><br>
+      width  <span class="op">= |${f(x2px)} − ${f(x1px)}| =</span> <span class="res">${f(width)} px</span><br>
+      height <span class="op">= |${f(y2px)} − ${f(y1px)}| =</span> <span class="res">${f(height)} px</span>
+    </div>
+
+    <div class="math-block">
+      <div class="step-label">④ Page size at this scale</div>
+      page width  <span class="op">= ${PAGE_W_PT} × ${f(scale)} =</span> <span class="res">${f(pageWpx)} px</span><br>
+      page height <span class="op">= ${PAGE_H_PT} × ${f(scale)} =</span> <span class="res">${f(pageHpx)} px</span>
+    </div>
+
+    <div class="math-block" style="border-color:#34d399;">
+      <div class="step-label" style="color:#34d399;">⑤ Draw on overlay canvas</div>
+      ctx.strokeRect(<span class="res">${f(left)}</span>, <span class="res">${f(top)}</span>, <span class="res">${f(width)}</span>, <span class="res">${f(height)}</span>)
+    </div>
+  `;
+}
+
+function renderCanvas(inp, out) {
+  const { x1, y1, x2, y2 } = inp;
+  const { left, top, width, height, pageWpx, pageHpx } = out;
+
+  const cw = Math.round(pageWpx);
+  const ch = Math.round(pageHpx);
+
+  pdfCanvas.width     = cw; pdfCanvas.height     = ch;
+  overlayCanvas.width = cw; overlayCanvas.height = ch;
+  pdfCanvas.style.width     = cw + 'px'; pdfCanvas.style.height     = ch + 'px';
+  overlayCanvas.style.width = cw + 'px'; overlayCanvas.style.height = ch + 'px';
+
+  // PDF page background
+  const pCtx = pdfCanvas.getContext('2d');
+  pCtx.fillStyle = '#f8fafc';
+  pCtx.fillRect(0, 0, cw, ch);
+
+  // Faint grid to suggest a document
+  pCtx.strokeStyle = '#e2e8f0';
+  pCtx.lineWidth = 0.5;
+  const step = inp.scale * 40;
+  for (let x = step; x < cw; x += step) { pCtx.beginPath(); pCtx.moveTo(x,0); pCtx.lineTo(x,ch); pCtx.stroke(); }
+  for (let y = step; y < ch; y += step) { pCtx.beginPath(); pCtx.moveTo(0,y); pCtx.lineTo(cw,y); pCtx.stroke(); }
+
+  // Fake text lines
+  pCtx.fillStyle = '#cbd5e1';
+  const lh = inp.scale * 12;
+  for (let ly = lh * 2; ly < ch - lh; ly += lh * 2) {
+    const lw = (0.5 + Math.sin(ly) * 0.2) * cw * 0.7;
+    pCtx.fillRect(inp.scale * 20, ly, lw, lh * 0.4);
+  }
+
+  // Origin dot
+  pCtx.fillStyle = '#6366f1';
+  pCtx.beginPath(); pCtx.arc(6, 6, 4, 0, Math.PI*2); pCtx.fill();
+  pCtx.fillStyle = '#6366f1';
+  pCtx.font = `bold ${Math.round(inp.scale * 9)}px Inter, sans-serif`;
+  pCtx.fillText('(0,0)', 12, 14);
+
+  // Corner dots for input points
+  const scale = inp.scale;
+  [[x1*scale, y1*scale, 'C1'], [x2*scale, y2*scale, 'C2']].forEach(([cx, cy, lbl]) => {
+    pCtx.fillStyle = '#f472b6';
+    pCtx.beginPath(); pCtx.arc(cx, cy, 4, 0, Math.PI*2); pCtx.fill();
+    pCtx.fillStyle = '#f472b6';
+    pCtx.font = `${Math.round(scale * 9)}px Inter, sans-serif`;
+    pCtx.fillText(lbl, cx + 6, cy - 4);
+  });
+
+  // BBox fill + stroke
+  const oCtx = overlayCanvas.getContext('2d');
+  oCtx.clearRect(0, 0, cw, ch);
+  oCtx.fillStyle = 'rgba(99,102,241,0.18)';
+  oCtx.fillRect(left, top, width, height);
+  oCtx.strokeStyle = '#6366f1';
+  oCtx.lineWidth = 2;
+  oCtx.strokeRect(left, top, width, height);
+
+  // Dimension labels
+  oCtx.fillStyle = '#6366f1';
+  oCtx.font = `bold ${Math.round(inp.scale * 9)}px Inter, sans-serif`;
+  const wLabel = `w: ${f(width)} px`;
+  const hLabel = `h: ${f(height)} px`;
+  const tw = oCtx.measureText(wLabel).width;
+  oCtx.fillText(wLabel, left + (width - tw) / 2, top - 6 < 0 ? top + 4 : top - 6);
+  oCtx.save();
+  oCtx.translate(left + width + 4, top + height / 2);
+  oCtx.rotate(Math.PI / 2);
+  oCtx.fillText(hLabel, -oCtx.measureText(hLabel).width / 2, 0);
+  oCtx.restore();
+}
+
+function update() {
+  const inp = getInputs();
+  scaleDisplay.textContent = inp.scale.toFixed(2);
+  const out = compute(inp);
+  renderCanvas(inp, out);
+  renderMath(inp, out);
+}
+
+[scaleSlider, inX1, inY1, inX2, inY2].forEach(el => el.addEventListener('input', update));
+update();
+</script>
+</body>
+</html>

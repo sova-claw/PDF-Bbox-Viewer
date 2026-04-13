@@ -6,6 +6,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 const MAX_WARNINGS = 25;
 const LIGHT_THEME = "light";
 const DARK_THEME = "dark";
+/** Single mapper: normalized bbox is top-left page units (pt); px = pt * scale */
+const MAPPER_TOP_LEFT_PAGE_UNITS = "top-left-page-units";
 
 const state = {
   pdfDoc: null,
@@ -19,9 +21,7 @@ const state = {
   screenRects: [],
   activeObjectId: null,
   pinnedObjectId: null,
-  mappingKind: "pdf-origin",
-  mappingPreference: "auto",
-  mappingScores: { pdf: 0, topLeft: 0 },
+  mappingKind: MAPPER_TOP_LEFT_PAGE_UNITS,
   mappingDebug: "",
   parseStats: {
     accepted: 0,
@@ -42,6 +42,8 @@ const state = {
     warnings: [],
   },
   cursorPoint: null,
+  liveInspectorPoint: null,
+  savedInspectorPoint: null,
   showCursorGuide: true,
   theme: LIGHT_THEME,
   gestureStartScale: null,
@@ -54,6 +56,8 @@ const ui = {
   jsonInput: document.getElementById("jsonInput"),
   pdfFile: document.getElementById("pdfFile"),
   choosePdfBtn: document.getElementById("choosePdfBtn"),
+  loadDemoBtn: document.getElementById("loadDemoBtn"),
+  loadCsvDemoBtn: document.getElementById("loadCsvDemoBtn"),
   csvFile: document.getElementById("csvFile"),
   chooseCsvBtn: document.getElementById("chooseCsvBtn"),
   sourceModeJsonBtn: document.getElementById("sourceModeJsonBtn"),
@@ -69,9 +73,10 @@ const ui = {
   nextPageBtn: document.getElementById("nextPageBtn"),
   pageSelect: document.getElementById("pageSelect"),
   pageIndicator: document.getElementById("pageIndicator"),
+  scaleSizeHint: document.getElementById("scaleSizeHint"),
   showLabels: document.getElementById("showLabels"),
   showCursorGuide: document.getElementById("showCursorGuide"),
-  mappingMode: document.getElementById("mappingMode"),
+  showInspector: document.getElementById("showInspector"),
   fitPageBtn: document.getElementById("fitPageBtn"),
   resetZoomBtn: document.getElementById("resetZoomBtn"),
   togglePanelBtn: document.getElementById("togglePanelBtn"),
@@ -85,6 +90,9 @@ const ui = {
   summary: document.getElementById("summary"),
   canvas: document.getElementById("pdfCanvas"),
   overlayCanvas: document.getElementById("overlayCanvas"),
+  cursorTooltip: document.getElementById("cursorTooltip"),
+  inspectorBlock: document.getElementById("inspectorBlock"),
+  cursorInspector: document.getElementById("cursorInspector"),
   viewerWrap: document.getElementById("viewerWrap"),
   viewerPane: document.getElementById("viewerPane"),
   loader: document.getElementById("loader"),
@@ -310,6 +318,8 @@ function parseCsvInput(text) {
   const y1Idx = idx("y1");
   const pageIdx = [idx("document page number"), idx("page"), idx("page number")].find((v) => v >= 0);
   const kindIdx = [idx("subclass description"), idx("class"), idx("label"), idx("type")].find((v) => v >= 0);
+  /** Prefer real ids/names for display — not "Stevens Model Number" (often comma-separated SKUs, not a short label). */
+  const labelIdIdx = [idx("id"), idx("uuid"), idx("name")].find((v) => v >= 0);
 
   const warnings = [];
   const byPage = new Map();
@@ -345,9 +355,13 @@ function parseCsvInput(text) {
     const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
     const kindRaw = kindIdx >= 0 ? row[kindIdx] : "csv_object";
     const kind = singularize(String(kindRaw || "csv_object").toLowerCase().replace(/[^a-z0-9_]/g, "_"));
+    const subclassLabel = String(kindRaw || "").trim();
+    const explicitLabel = labelIdIdx >= 0 ? String(row[labelIdIdx] || "").trim() : "";
+    const displayName = subclassLabel || explicitLabel || "";
     const id = `csv_${page}_${lineNo}`;
     const detection = {
       id,
+      displayName,
       kind,
       page,
       coordSpace: "csv-pixel",
@@ -419,15 +433,55 @@ function clearViewer() {
   ui.objectList.innerHTML = "";
   ui.objectDetails.textContent = "No object selected.";
   ui.summary.textContent = "";
-  ui.cursorCoords.textContent = "";
+  if (ui.cursorCoords) ui.cursorCoords.textContent = "";
   state.activeObjectId = null;
   state.pinnedObjectId = null;
   state.screenRects = [];
   state.csvPageExtents = new Map();
   state.cursorPoint = null;
+  state.liveInspectorPoint = null;
+  state.savedInspectorPoint = null;
+  if (ui.cursorInspector) ui.cursorInspector.textContent = "Hover PDF and click to save a point.";
   lastRenderedViewport = null;
   lastBaseViewport = null;
+  if (ui.scaleSizeHint) ui.scaleSizeHint.textContent = "render size: -";
   updatePagerControls();
+}
+
+function updateInspectorVisibility() {
+  const show = ui.showInspector?.checked ?? true;
+  if (ui.inspectorBlock) {
+    ui.inspectorBlock.classList.toggle("hidden", !show);
+  }
+}
+
+function updateScaleSizeHint() {
+  if (!ui.scaleSizeHint) return;
+  if (!lastRenderedViewport || !lastBaseViewport) {
+    ui.scaleSizeHint.textContent = "render size: -";
+    return;
+  }
+  const rW = Math.round(lastRenderedViewport.width);
+  const rH = Math.round(lastRenderedViewport.height);
+  const pW = Math.round(lastBaseViewport.width);
+  const pH = Math.round(lastBaseViewport.height);
+  ui.scaleSizeHint.textContent = `render: ${rW}x${rH}px | page: ${pW}x${pH}pt`;
+}
+
+async function readJsonFromPath(path) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    throw new Error(`Failed to load JSON: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+async function readTextFromPath(path) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    throw new Error(`Failed to load text: ${res.status} ${res.statusText}`);
+  }
+  return res.text();
 }
 
 function renderWarningList(container, warnings) {
@@ -456,18 +510,7 @@ function renderParseFeedback() {
   renderWarningList(ui.csvWarnings, c.warnings || []);
 }
 
-function rectFromPdfOrigin(bbox, viewport) {
-  const p1 = viewport.convertToViewportPoint(bbox.x1, bbox.y1);
-  const p2 = viewport.convertToViewportPoint(bbox.x2, bbox.y2);
-  return {
-    x: Math.min(p1[0], p2[0]),
-    top: Math.min(p1[1], p2[1]),
-    width: Math.abs(p2[0] - p1[0]),
-    height: Math.abs(p2[1] - p1[1]),
-  };
-}
-
-function rectFromTopLeftOrigin(bbox, viewport) {
+function rectFromTopLeftPageUnits(bbox, viewport) {
   const sx = viewport.scale;
   const x1 = bbox.x1 * sx;
   const y1 = bbox.y1 * sx;
@@ -481,165 +524,12 @@ function rectFromTopLeftOrigin(bbox, viewport) {
   };
 }
 
-function rectFromCsvPixels(bbox, viewport, page, mappingKind) {
-  const ext = state.csvPageExtents.get(page) || {
-    minX: 0,
-    minY: 0,
-    maxX: viewport.width,
-    maxY: viewport.height,
-  };
-  const rangeX = Math.max(1, ext.maxX - ext.minX);
-  const rangeY = Math.max(1, ext.maxY - ext.minY);
-
-  let x1 = bbox.x1;
-  let y1 = bbox.y1;
-  let x2 = bbox.x2;
-  let y2 = bbox.y2;
-  let sx = 1;
-  let sy = 1;
-  let ox = 0;
-  let oy = 0;
-
-  if (mappingKind === "csv-raw-top-left") {
-    sx = viewport.scale;
-    sy = viewport.scale;
-  } else if (mappingKind === "csv-raw-top-left-yflip") {
-    const pageHeightPt = viewport.height / Math.max(0.0001, viewport.scale);
-    y1 = pageHeightPt - y1;
-    y2 = pageHeightPt - y2;
-    sx = viewport.scale;
-    sy = viewport.scale;
-  } else if (mappingKind === "csv-raw-pdf-origin") {
-    return rectFromPdfOrigin(bbox, viewport);
-  } else if (mappingKind === "csv-max") {
-    sx = viewport.width / Math.max(1, ext.maxX);
-    sy = viewport.height / Math.max(1, ext.maxY);
-  } else if (mappingKind === "csv-fit") {
-    x1 -= ext.minX;
-    x2 -= ext.minX;
-    y1 -= ext.minY;
-    y2 -= ext.minY;
-    sx = viewport.width / rangeX;
-    sy = viewport.height / rangeY;
-  } else {
-    const useYFlip = mappingKind === "csv-fit-uniform-yflip";
-    x1 -= ext.minX;
-    x2 -= ext.minX;
-    y1 -= ext.minY;
-    y2 -= ext.minY;
-    if (useYFlip) {
-      y1 = rangeY - y1;
-      y2 = rangeY - y2;
-    }
-    const s = Math.min(viewport.width / rangeX, viewport.height / rangeY);
-    sx = s;
-    sy = s;
-    ox = (viewport.width - rangeX * s) / 2;
-    oy = (viewport.height - rangeY * s) / 2;
-  }
-
-  const px1 = x1 * sx + ox;
-  const py1 = y1 * sy + oy;
-  const px2 = x2 * sx + ox;
-  const py2 = y2 * sy + oy;
-
-  return {
-    x: Math.min(px1, px2),
-    top: Math.min(py1, py2),
-    width: Math.abs(px2 - px1),
-    height: Math.abs(py2 - py1),
-  };
-}
-
-function buildRects(detections, viewport, mappingKind) {
-  return detections.map((d) => {
-    let rect;
-    if (d.coordSpace === "csv-pixel") {
-      const csvKind = mappingKind.startsWith("csv-") ? mappingKind : "csv-fit-uniform";
-      rect = rectFromCsvPixels(d.bbox, viewport, d.page, csvKind);
-    } else {
-      rect = mappingKind === "top-left-origin" ? rectFromTopLeftOrigin(d.bbox, viewport) : rectFromPdfOrigin(d.bbox, viewport);
-    }
-    return { id: d.id, rect, data: d };
-  });
-}
-
-function scoreRectsByInk(canvasCtx, rectEntries, viewport) {
-  if (!rectEntries.length) return -1000;
-  const w = canvasCtx.canvas.width;
-  const h = canvasCtx.canvas.height;
-  const image = canvasCtx.getImageData(0, 0, w, h);
-  const { data, width, height } = image;
-  const scaleX = width / Math.max(1, viewport.width);
-  const scaleY = height / Math.max(1, viewport.height);
-  let darknessSum = 0;
-  let points = 0;
-  let offPage = 0;
-
-  for (const entry of rectEntries) {
-    const r = entry.rect;
-    const left = Math.max(0, Math.floor(r.x * scaleX));
-    const right = Math.min(width - 1, Math.floor((r.x + r.width) * scaleX));
-    const top = Math.max(0, Math.floor(r.top * scaleY));
-    const bottom = Math.min(height - 1, Math.floor((r.top + r.height) * scaleY));
-    if (right <= left || bottom <= top) {
-      offPage += 1;
-      continue;
-    }
-    const sx = Math.max(1, Math.floor((right - left) / 4));
-    const sy = Math.max(1, Math.floor((bottom - top) / 4));
-    for (let y = top; y <= bottom; y += sy) {
-      for (let x = left; x <= right; x += sx) {
-        const idx = (y * width + x) * 4;
-        const bright = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-        darknessSum += 255 - bright;
-        points += 1;
-      }
-    }
-  }
-  if (!points) return -1000;
-  return darknessSum / points - offPage * 20;
-}
-
-function chooseBestMapping(detections, viewport) {
-  if (!detections.length) return { kind: "pdf-origin", pdfScore: 0, topLeftScore: 0 };
-  const ctx = ui.canvas.getContext("2d", { willReadFrequently: true });
-  const pdfRects = buildRects(detections, viewport, "pdf-origin");
-  const topLeftRects = buildRects(detections, viewport, "top-left-origin");
-  const pdfScore = scoreRectsByInk(ctx, pdfRects, viewport);
-  const topLeftScore = scoreRectsByInk(ctx, topLeftRects, viewport);
-  return {
-    kind: topLeftScore > pdfScore ? "top-left-origin" : "pdf-origin",
-    pdfScore,
-    topLeftScore,
-  };
-}
-
-function chooseBestCsvMapping(detections, viewport) {
-  if (!detections.length) return { kind: "csv-raw-top-left", scores: {} };
-  const ctx = ui.canvas.getContext("2d", { willReadFrequently: true });
-  const candidates = [
-    "csv-raw-top-left",
-    "csv-raw-top-left-yflip",
-    "csv-raw-pdf-origin",
-    "csv-max",
-    "csv-fit",
-    "csv-fit-uniform",
-    "csv-fit-uniform-yflip",
-  ];
-  let bestKind = candidates[0];
-  let bestScore = Number.NEGATIVE_INFINITY;
-  const scores = {};
-  for (const kind of candidates) {
-    const rects = buildRects(detections, viewport, kind);
-    const score = scoreRectsByInk(ctx, rects, viewport);
-    scores[kind] = score;
-    if (score > bestScore) {
-      bestScore = score;
-      bestKind = kind;
-    }
-  }
-  return { kind: bestKind, scores };
+function buildRects(detections, viewport) {
+  return detections.map((d) => ({
+    id: d.id,
+    rect: rectFromTopLeftPageUnits(d.bbox, viewport),
+    data: d,
+  }));
 }
 
 function compactLabel(id) {
@@ -648,9 +538,23 @@ function compactLabel(id) {
   return `${id.slice(0, 12)}...`;
 }
 
-function objectText(d) {
+function objectText(d, rect) {
   const b = d.bbox;
-  return `${d.id}\ntype: ${d.kind || "object"}\npage: ${d.page}\nx: [${formatN(b.x1)}, ${formatN(b.x2)}]\ny: [${formatN(b.y1)}, ${formatN(b.y2)}]`;
+  const bw = Math.abs(b.x2 - b.x1);
+  const bh = Math.abs(b.y2 - b.y1);
+  const displayId = d.displayName ? `${d.id} | ${d.displayName}` : d.id;
+  return `${displayId}
+type: ${d.kind || "object"}
+page: ${d.page}
+
+[Coordinates]
+x (pt): [${formatN(b.x1)}, ${formatN(b.x2)}]
+y (pt): [${formatN(b.y1)}, ${formatN(b.y2)}]
+
+[Calculations]
+bbox width (pt): ${formatN(bw)} = |x2 - x1| = |${formatN(b.x2)} - ${formatN(b.x1)}|
+bbox height (pt): ${formatN(bh)} = |y2 - y1| = |${formatN(b.y2)} - ${formatN(b.y1)}|
+`;
 }
 
 function getBboxRange(detections) {
@@ -674,9 +578,10 @@ function renderObjectList(detections) {
     const li = document.createElement("li");
     li.className = "object-item";
     li.dataset.id = d.id;
+    const displayId = d.displayName ? `${d.id} | ${d.displayName}` : d.id;
     li.innerHTML = `
-      <div class="object-id">${d.kind || "object"}: ${d.id}</div>
-      <div class="object-meta">p${d.page} | x ${formatN(d.bbox.x1)}-${formatN(d.bbox.x2)} | y ${formatN(d.bbox.y1)}-${formatN(d.bbox.y2)}</div>
+      <div class="object-id">${d.kind || "object"}: ${displayId}</div>
+      <div class="object-meta">p${d.page} | x(pt) ${formatN(d.bbox.x1)}-${formatN(d.bbox.x2)} | y(pt) ${formatN(d.bbox.y1)}-${formatN(d.bbox.y2)}</div>
     `;
     li.addEventListener("mouseenter", () => {
       if (!state.pinnedObjectId) setActiveObject(d.id);
@@ -749,6 +654,10 @@ function drawOverlayFromRects(rectEntries, viewport) {
     const active = state.activeObjectId === d.id;
     ctx.lineWidth = active ? 3.5 : 2.5;
     ctx.strokeStyle = active ? "#ffe77a" : "#ff3d66";
+    if (active) {
+      ctx.fillStyle = "rgba(255, 231, 122, 0.16)";
+      ctx.fillRect(rect.x, rect.top, rect.width, rect.height);
+    }
     ctx.strokeRect(rect.x, rect.top, rect.width, rect.height);
 
     if (showLabels) {
@@ -762,6 +671,18 @@ function drawOverlayFromRects(rectEntries, viewport) {
       ctx.fillStyle = "#0e1020";
       ctx.fillText(text, tx + 4, ty + 1);
     }
+
+    if (active) {
+      const dimText = `${Math.round(Math.abs(rect.width))} x ${Math.round(Math.abs(rect.height))} px`;
+      ctx.font = "11px Inter, sans-serif";
+      const dw = Math.ceil(ctx.measureText(dimText).width);
+      const dx = rect.x;
+      const dy = Math.min(viewport.height - 16, rect.top + rect.height + 4);
+      ctx.fillStyle = "rgba(18, 24, 44, 0.9)";
+      ctx.fillRect(dx, dy, dw + 8, 13);
+      ctx.fillStyle = "#eaf0ff";
+      ctx.fillText(dimText, dx + 4, dy + 1);
+    }
   }
 
   drawCursorGuide(ctx, viewport);
@@ -774,18 +695,63 @@ function setActiveObject(id) {
     item.classList.toggle("active", item.dataset.id === id);
   }
   const hit = state.screenRects.find((r) => r.id === id);
-  ui.objectDetails.textContent = hit ? objectText(hit.data) : "No object selected.";
+  ui.objectDetails.textContent = hit ? objectText(hit.data, hit.rect) : "No object selected.";
+  renderCursorInspector();
   if (lastRenderedViewport) drawOverlayFromRects(state.screenRects, lastRenderedViewport);
 }
 
-function updateCursorCoordinates(evt) {
-  if (!lastRenderedViewport) return;
+function getInspectorPointFromEvent(evt) {
+  if (!lastRenderedViewport) return null;
   const rect = ui.overlayCanvas.getBoundingClientRect();
   const cx = evt.clientX - rect.left;
   const cy = evt.clientY - rect.top;
-  state.cursorPoint = { x: cx, y: cy };
   const [pdfX, pdfY] = lastRenderedViewport.convertToPdfPoint(cx, cy);
-  ui.cursorCoords.textContent = `cursor px: (${formatN(cx)}, ${formatN(cy)}) | pdf: (${formatN(pdfX)}, ${formatN(pdfY)})`;
+  return { cx, cy, pdfX, pdfY };
+}
+
+function pointForBBoxComparison(point) {
+  if (!point) return null;
+  const scale = Math.max(0.0001, state.scale || 1);
+  return {
+    x: point.cx / scale,
+    y: point.cy / scale,
+  };
+}
+
+function renderCursorInspector() {
+  if (ui.cursorInspector) {
+    const active = state.screenRects.find((r) => r.id === state.activeObjectId) || null;
+    const liveComparePoint = pointForBBoxComparison(state.liveInspectorPoint);
+    const savedComparePoint = pointForBBoxComparison(state.savedInspectorPoint);
+    const sections = [];
+    if (liveComparePoint) {
+      sections.push(`cursor (live)
+pt: x=${formatN(liveComparePoint.x)} pt, y=${formatN(liveComparePoint.y)} pt`);
+    }
+    if (savedComparePoint) {
+      sections.push(`saved point (last click)
+pt: x=${formatN(savedComparePoint.x)} pt, y=${formatN(savedComparePoint.y)} pt`);
+    }
+    if (active) {
+      const b = active.data.bbox;
+      const activeDisplayId = active.data.displayName ? `${active.data.id} | ${active.data.displayName}` : active.data.id;
+      sections.push(`object: ${activeDisplayId}
+bbox x (pt): x1=${formatN(b.x1)} pt, x2=${formatN(b.x2)} pt
+bbox y (pt): y1=${formatN(b.y1)} pt, y2=${formatN(b.y2)} pt`);
+    } else {
+      sections.push("object: no active object");
+    }
+    ui.cursorInspector.textContent = sections.join("\n\n");
+  }
+}
+
+function updateCursorCoordinates(evt) {
+  const point = getInspectorPointFromEvent(evt);
+  if (!point) return;
+  state.cursorPoint = { x: point.cx, y: point.cy };
+  state.liveInspectorPoint = point;
+  if (ui.cursorTooltip) ui.cursorTooltip.classList.add("hidden");
+  renderCursorInspector();
 }
 
 function pickObjectAt(clientX, clientY) {
@@ -806,7 +772,6 @@ function scheduleHoverUpdate(evt) {
   hoverRafHandle = requestAnimationFrame(() => {
     hoverRafHandle = null;
     if (!lastPointerEvent) return;
-    updateCursorCoordinates(lastPointerEvent);
     if (!state.pinnedObjectId) {
       const id = pickObjectAt(lastPointerEvent.clientX, lastPointerEvent.clientY);
       if (id !== state.activeObjectId) setActiveObject(id);
@@ -814,33 +779,13 @@ function scheduleHoverUpdate(evt) {
     } else if (lastRenderedViewport) {
       drawOverlayFromRects(state.screenRects, lastRenderedViewport);
     }
+    updateCursorCoordinates(lastPointerEvent);
   });
 }
 
-function getRenderMapping(detections, viewport) {
-  const csvOnly = detections.length > 0 && detections.every((d) => d.coordSpace === "csv-pixel");
-  if (csvOnly) {
-    if (state.mappingPreference !== "auto" && state.mappingPreference.startsWith("csv-")) {
-      state.mappingScores = { pdf: 0, topLeft: 0 };
-      state.mappingDebug = `csv=${state.mappingPreference}`;
-      return state.mappingPreference;
-    }
-    const csvAuto = chooseBestCsvMapping(detections, viewport);
-    state.mappingScores = { pdf: 0, topLeft: 0 };
-    state.mappingDebug = `csv scores: ${Object.entries(csvAuto.scores)
-      .map(([k, v]) => `${k}:${formatN(v)}`)
-      .join(", ")}`;
-    return csvAuto.kind;
-  }
+function getFixedMapperKind() {
   state.mappingDebug = "";
-  const pdfDetections = detections.filter((d) => d.coordSpace !== "csv-pixel");
-  const auto = chooseBestMapping(pdfDetections, viewport);
-  state.mappingScores = { pdf: auto.pdfScore, topLeft: auto.topLeftScore };
-  if (state.mappingPreference.startsWith("csv-")) {
-    return auto.kind;
-  }
-  if (state.mappingPreference === "auto") return auto.kind;
-  return state.mappingPreference;
+  return MAPPER_TOP_LEFT_PAGE_UNITS;
 }
 
 function setScale(nextScale, { shouldRender = true } = {}) {
@@ -869,10 +814,11 @@ function updateSummary(detections, outOfBounds) {
     `page ${state.currentPage}/${state.pageCount}`,
     `${detections.length} objects`,
     `scale=${state.scale.toFixed(2)}`,
-    `map=${state.mappingKind}`,
-    `scores(pdf=${formatN(state.mappingScores.pdf)}, top=${formatN(state.mappingScores.topLeft)})`,
-    lastBaseViewport ? `pdf=${formatN(lastBaseViewport.width)}x${formatN(lastBaseViewport.height)} pt` : "",
-    range ? `bbox x=[${formatN(range.minX)}, ${formatN(range.maxX)}], y=[${formatN(range.minY)}, ${formatN(range.maxY)}]` : "bbox n/a",
+    `mapper=${state.mappingKind}`,
+    lastBaseViewport ? `page=${formatN(lastBaseViewport.width)}x${formatN(lastBaseViewport.height)} pt` : "",
+    range
+      ? `bbox(pt) x=[${formatN(range.minX)}, ${formatN(range.maxX)}], y=[${formatN(range.minY)}, ${formatN(range.maxY)}]`
+      : "bbox n/a",
     `off-page=${outOfBounds}`,
     state.mappingDebug || "",
   ]
@@ -924,12 +870,13 @@ async function renderPage(pageNum, token) {
   if (token !== pendingRenderToken) return;
 
   const detections = state.detectionsByPage.get(pageNum) || [];
-  state.mappingKind = getRenderMapping(detections, viewport);
-  state.screenRects = buildRects(detections, viewport, state.mappingKind);
+  state.mappingKind = getFixedMapperKind();
+  state.screenRects = buildRects(detections, viewport);
   const outOfBounds = drawOverlayFromRects(state.screenRects, viewport);
   renderObjectList(detections);
   setPinnedObject(null);
   updateSummary(detections, outOfBounds);
+  updateScaleSizeHint();
 }
 
 function scheduleRender() {
@@ -1045,7 +992,6 @@ async function loadAll() {
   const pdfPath = ui.pdfPath.value.trim();
   const requestedScale = clampScale(Number(ui.scaleInput.value));
   setScale(requestedScale, { shouldRender: false });
-  state.mappingPreference = ui.mappingMode.value;
   state.showCursorGuide = ui.showCursorGuide.checked;
   const sourceKey = getPdfSourceKey(pdfPath, state.selectedPdfFile);
 
@@ -1087,8 +1033,7 @@ async function loadAll() {
     fillPageSelector();
     const isNewSource = sourceKey !== state.lastPdfSourceKey;
     if (isNewSource) {
-      const fitScale = await computeFitScaleForPage(pdfDoc, 1);
-      setScale(fitScale, { shouldRender: false });
+      setScale(1, { shouldRender: false });
       state.lastPdfSourceKey = sourceKey;
     }
     await renderPage(state.currentPage, ++pendingRenderToken);
@@ -1100,8 +1045,49 @@ async function loadAll() {
   }
 }
 
+async function loadDemoDoorsBundle() {
+  setSourceMode("json");
+  setScale(1, { shouldRender: false });
+  const raw = await readJsonFromPath("./data/doors-response.json");
+  ui.jsonInput.value = JSON.stringify(raw, null, 2);
+  state.selectedCsvFile = null;
+  if (ui.csvFile) ui.csvFile.value = "";
+  state.csvStats = { accepted: 0, rejected: 0, arraysScanned: 0, warnings: [] };
+  updatePickedFileNames();
+  updateCsvVisualState();
+  renderParseFeedback();
+  ui.pdfPath.value = "./sample_data/Doors-v1.pdf";
+  await loadAll();
+}
+
+async function loadDemoCsvBundle() {
+  setSourceMode("csv");
+  setScale(1, { shouldRender: false });
+  const csvText = await readTextFromPath("./sample_data/1_J0948_62043.csv");
+  state.selectedCsvFile = new File([csvText], "1_J0948_62043.csv", { type: "text/csv" });
+  if (ui.csvFile) ui.csvFile.value = "";
+  state.csvStats = parseCsvInput(csvText).stats;
+  updatePickedFileNames();
+  updateCsvVisualState();
+  renderParseFeedback();
+  ui.pdfPath.value = "./sample_data/1_J0948_62043.pdf";
+  await loadAll();
+}
+
 ui.loadBtn.addEventListener("click", () => {
   loadAll();
+});
+
+ui.loadDemoBtn.addEventListener("click", () => {
+  loadDemoDoorsBundle().catch((err) => {
+    ui.summary.textContent = `Demo load failed: ${err.message}`;
+  });
+});
+
+ui.loadCsvDemoBtn.addEventListener("click", () => {
+  loadDemoCsvBundle().catch((err) => {
+    ui.summary.textContent = `CSV demo load failed: ${err.message}`;
+  });
 });
 
 ui.pageSelect.addEventListener("change", (e) => {
@@ -1127,13 +1113,12 @@ ui.showCursorGuide.addEventListener("change", () => {
   if (lastRenderedViewport) drawOverlayFromRects(state.screenRects, lastRenderedViewport);
 });
 
-ui.scaleInput.addEventListener("change", () => {
-  setScale(Number(ui.scaleInput.value));
+ui.showInspector.addEventListener("change", () => {
+  updateInspectorVisibility();
 });
 
-ui.mappingMode.addEventListener("change", () => {
-  state.mappingPreference = ui.mappingMode.value;
-  scheduleRender();
+ui.scaleInput.addEventListener("change", () => {
+  setScale(Number(ui.scaleInput.value));
 });
 
 ui.sourceModeJsonBtn.addEventListener("click", () => {
@@ -1154,6 +1139,17 @@ ui.resetZoomBtn.addEventListener("click", () => {
   setScale(1);
 });
 
+if (ui.docsBtn) {
+  ui.docsBtn.addEventListener("click", (e) => {
+    const url = new URL("./docs.html", window.location.href).href;
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.location.assign(url);
+  });
+}
+
 ui.themeToggleBtn.addEventListener("click", () => {
   toggleTheme();
 });
@@ -1161,10 +1157,6 @@ ui.themeToggleBtn.addEventListener("click", () => {
 ui.togglePanelBtn.addEventListener("click", () => {
   document.body.classList.toggle("panel-collapsed");
   updatePanelToggleLabel();
-});
-
-ui.docsBtn.addEventListener("click", () => {
-  window.location.href = "./docs.html";
 });
 
 ui.choosePdfBtn.addEventListener("click", () => ui.pdfFile.click());
@@ -1230,13 +1222,19 @@ ui.overlayCanvas.addEventListener("mousemove", (e) => {
 });
 
 ui.overlayCanvas.addEventListener("click", (e) => {
+  const point = getInspectorPointFromEvent(e);
+  if (point) state.savedInspectorPoint = point;
   const id = pickObjectAt(e.clientX, e.clientY);
   togglePinnedObject(id);
+  renderCursorInspector();
 });
 
 ui.overlayCanvas.addEventListener("mouseleave", () => {
-  ui.cursorCoords.textContent = "";
+  if (ui.cursorCoords) ui.cursorCoords.textContent = "";
   state.cursorPoint = null;
+  state.liveInspectorPoint = null;
+  if (ui.cursorTooltip) ui.cursorTooltip.classList.add("hidden");
+  renderCursorInspector();
   if (!state.pinnedObjectId) {
     setActiveObject(null);
   } else if (lastRenderedViewport) {
@@ -1309,3 +1307,4 @@ renderParseFeedback();
 updatePickedFileNames();
 updateCsvVisualState();
 updatePagerControls();
+updateInspectorVisibility();

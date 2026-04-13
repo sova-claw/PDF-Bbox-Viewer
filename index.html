@@ -26,12 +26,16 @@
             <h3>Document</h3>
             <label>
               PDF path
-              <input id="pdfPath" type="text" value="./test-data/Doors-v1.pdf" />
+              <input id="pdfPath" type="text" value="" placeholder="Optional: ./sample_data/1_J0948_62043.pdf" />
             </label>
             <div class="file-picker">
               <button id="choosePdfBtn" type="button">Choose PDF</button>
               <span id="pdfFileName" class="file-name">none</span>
               <input id="pdfFile" class="hidden-input" type="file" accept=".pdf,application/pdf" />
+            </div>
+            <div class="demo-btn-group">
+              <button id="loadDemoBtn" class="secondary-btn demo-action-btn" type="button">Load demo — Doors PDF + JSON</button>
+              <button id="loadCsvDemoBtn" class="secondary-btn demo-action-btn" type="button">Load demo — Drawing PDF + CSV</button>
             </div>
           </section>
 
@@ -41,31 +45,25 @@
               <label>
                 Scale
                 <input id="scaleInput" type="number" step="0.1" min="0.2" max="6" value="1.0" />
+                <span id="scaleSizeHint" class="hint-inline">render size: -</span>
               </label>
             </div>
-            <div class="pager-controls">
-              <button id="prevPageBtn" class="secondary-btn" type="button">Prev page</button>
-              <select id="pageSelect"></select>
-              <button id="nextPageBtn" class="secondary-btn" type="button">Next page</button>
-            </div>
-            <div id="pageIndicator" class="page-indicator">Page - / -</div>
-            <p class="hint-inline">Shortcuts: `[` / `]` or Arrow Left / Arrow Right</p>
-            <div class="row">
-              <label>
-                Mapping
-                <select id="mappingMode">
-                  <option value="auto">Auto</option>
-                  <option value="pdf-origin">PDF origin</option>
-                  <option value="top-left-origin">Top-left origin</option>
-                  <option value="csv-raw-top-left">CSV raw top-left</option>
-                  <option value="csv-raw-top-left-yflip">CSV raw top-left + Y flip</option>
-                  <option value="csv-raw-pdf-origin">CSV raw PDF origin</option>
-                  <option value="csv-max">CSV max-scale</option>
-                  <option value="csv-fit">CSV fit-stretch</option>
-                  <option value="csv-fit-uniform">CSV fit-uniform</option>
-                  <option value="csv-fit-uniform-yflip">CSV fit-uniform + Y flip</option>
-                </select>
-              </label>
+            <div class="pager-wrap">
+              <div class="pager-bar" role="group" aria-label="Page navigation">
+                <button id="prevPageBtn" class="pager-btn pager-btn-prev" type="button">
+                  <span class="pager-chevron" aria-hidden="true">‹</span>
+                  <span class="pager-label">Prev</span>
+                </button>
+                <div class="pager-middle">
+                  <div id="pageIndicator" class="pager-indicator">Page - / -</div>
+                  <select id="pageSelect" class="pager-select" aria-label="Jump to page"></select>
+                </div>
+                <button id="nextPageBtn" class="pager-btn pager-btn-next" type="button">
+                  <span class="pager-label">Next</span>
+                  <span class="pager-chevron" aria-hidden="true">›</span>
+                </button>
+              </div>
+              <p class="hint-inline pager-hint">Shortcuts: <span class="mono">[</span> <span class="mono">]</span> or Arrow Left / Right</p>
             </div>
             <div class="toggles">
               <label class="inline-option">
@@ -75,6 +73,10 @@
               <label class="inline-option">
                 <input id="showCursorGuide" type="checkbox" checked />
                 Highlight cursor point
+              </label>
+              <label class="inline-option">
+                <input id="showInspector" type="checkbox" checked />
+                Show inspector
               </label>
             </div>
             <div class="row buttons-row">
@@ -136,14 +138,19 @@
               <div class="spinner"></div>
               <span>Rendering PDF...</span>
             </div>
+            <div id="cursorTooltip" class="cursor-tooltip hidden"></div>
           </div>
           <div class="status-line">
-            <span id="cursorCoords" class="coords"></span>
             <span id="summary"></span>
           </div>
         </section>
 
         <aside id="sidePanel" class="side-panel">
+          <section id="inspectorBlock" class="inspector-block">
+            <h3>Inspector</h3>
+            <pre id="cursorInspector" class="object-details inspector-details">Hover PDF to inspect cursor/object values.</pre>
+          </section>
+
           <h3>Objects</h3>
           <p class="muted">Hover or click boxes to inspect exact values.</p>
           <ul id="objectList" class="object-list"></ul>

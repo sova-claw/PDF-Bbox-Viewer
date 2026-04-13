@@ -18,8 +18,7 @@ Open `http://localhost:8000/`.
 - Draw bbox overlays on top of PDF (`pdf.js`)
 - Zoom with `Ctrl/Cmd + wheel`
 - Switch pages, inspect object list, hover/click highlight sync
-- Show cursor in canvas px + PDF coordinates
-- Auto-pick mapping mode (`pdf-origin` vs `top-left-origin`) using ink score
+- Inspector: saved point and bbox in top-left page units (pt), same mapper for JSON and CSV after parsing
 
 ## CSV shape
 
