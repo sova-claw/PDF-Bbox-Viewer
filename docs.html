@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coordinate Transform Docs</title>
+    <style>
+      :root {
+        --bg: #f3f7ff;
+        --surface: #ffffff;
+        --line: #d4ddf6;
+        --text: #122041;
+        --muted: #526289;
+        --accent: #3268dd;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 16px 14px 24px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1.1fr 1fr;
+      }
+      .preview {
+        width: 100%;
+        height: 560px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .formula {
+        margin-top: 8px;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #f9fbff;
+        font-size: 12px;
+      }
+      .viz {
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #f9fbff;
+      }
+      .viz svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 6px 8px;
+        text-align: left;
+      }
+      th {
+        background: #f3f7ff;
+      }
+      ul {
+        margin: 8px 0 0 18px;
+        padding: 0;
+      }
+      li {
+        margin: 4px 0;
+        color: var(--muted);
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .preview {
+          height: 420px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <h1>Coordinate Transformation (JSON + CSV)</h1>
+        <p>This page explains exactly how bbox coordinates become overlay pixels in the viewer.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Inline PDF Reference</h2>
+          <p>Sample PDF is embedded here so you can compare coordinates while reading formulas.</p>
+          <iframe class="preview" title="Sample PDF preview" src="./sample_data/1_J0948_62043.pdf#page=1"></iframe>
+        </article>
+
+        <article class="card">
+          <h2>Pipeline</h2>
+          <ul>
+            <li>Parse detection source (JSON or CSV).</li>
+            <li>Normalize to bbox object: <span class="mono">x1,y1,x2,y2,page</span>.</li>
+            <li>Choose mapping mode (auto/manual).</li>
+            <li>Transform bbox into viewport pixel rectangle.</li>
+            <li>Draw rectangle on overlay canvas.</li>
+          </ul>
+
+          <div class="formula mono">
+            viewport = pdf.js page.getViewport({ scale })<br />
+            rect = transform(bbox, viewport, mappingMode)<br />
+            overlayCtx.strokeRect(rect.x, rect.top, rect.width, rect.height)
+          </div>
+
+          <h2 style="margin-top: 12px">Page navigation</h2>
+          <ul>
+            <li>Prev/Next buttons</li>
+            <li>Page dropdown</li>
+            <li><span class="mono">[ ]</span> or Arrow Left/Right</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>JSON Transform</h2>
+        <p>Primary mode uses <span class="mono">pdf.js convertToViewportPoint</span> (PDF-space to screen-space).</p>
+        <div class="formula mono">
+          p1 = viewport.convertToViewportPoint(x1, y1)<br />
+          p2 = viewport.convertToViewportPoint(x2, y2)<br />
+          left = min(p1.x, p2.x), top = min(p1.y, p2.y)<br />
+          width = abs(p2.x - p1.x), height = abs(p2.y - p1.y)
+        </div>
+        <div class="viz">
+          <svg viewBox="0 0 760 260" aria-label="Coordinate transform diagram">
+            <rect x="0" y="0" width="760" height="260" fill="#f9fbff"></rect>
+            <rect x="40" y="42" width="280" height="180" fill="#ffffff" stroke="#b8c7f2"></rect>
+            <text x="40" y="28" fill="#5a6c99" font-size="13" font-family="sans-serif">Input space (PDF or CSV)</text>
+            <line x1="60" y1="202" x2="280" y2="202" stroke="#6a7fb4" stroke-width="1.5"></line>
+            <line x1="60" y1="202" x2="60" y2="62" stroke="#6a7fb4" stroke-width="1.5"></line>
+            <text x="286" y="208" fill="#6a7fb4" font-size="11" font-family="sans-serif">x</text>
+            <text x="52" y="58" fill="#6a7fb4" font-size="11" font-family="sans-serif">y</text>
+            <rect x="136" y="116" width="90" height="46" fill="none" stroke="#ff3d66" stroke-width="3"></rect>
+            <text x="132" y="108" fill="#cc2f53" font-size="11" font-family="sans-serif">bbox(x1,y1,x2,y2)</text>
+
+            <path d="M 340 132 L 420 132" stroke="#3268dd" stroke-width="2.5"></path>
+            <polygon points="420,132 410,126 410,138" fill="#3268dd"></polygon>
+            <text x="345" y="120" fill="#3268dd" font-size="11" font-family="sans-serif">transform()</text>
+
+            <rect x="440" y="42" width="280" height="180" fill="#ffffff" stroke="#b8c7f2"></rect>
+            <text x="440" y="28" fill="#5a6c99" font-size="13" font-family="sans-serif">Viewport pixel space</text>
+            <line x1="460" y1="202" x2="680" y2="202" stroke="#6a7fb4" stroke-width="1.5"></line>
+            <line x1="460" y1="202" x2="460" y2="62" stroke="#6a7fb4" stroke-width="1.5"></line>
+            <text x="686" y="208" fill="#6a7fb4" font-size="11" font-family="sans-serif">px-x</text>
+            <text x="444" y="58" fill="#6a7fb4" font-size="11" font-family="sans-serif">px-y</text>
+            <rect x="520" y="108" width="104" height="58" fill="none" stroke="#ff3d66" stroke-width="3"></rect>
+            <text x="514" y="100" fill="#cc2f53" font-size="11" font-family="sans-serif">overlay rect</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>CSV Transform</h2>
+        <p>CSV rows use columns <span class="mono">x0,y0,x1,y1</span>. The viewer can apply multiple mapping variants.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Meaning</th>
+              <th>When to use</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">csv-raw-top-left</td>
+              <td>Interpret CSV as top-left page units</td>
+              <td>Best when CSV already matches PDF geometry</td>
+            </tr>
+            <tr>
+              <td class="mono">csv-raw-top-left-yflip</td>
+              <td>Raw top-left with Y inversion</td>
+              <td>When CSV Y-axis appears inverted</td>
+            </tr>
+            <tr>
+              <td class="mono">csv-raw-pdf-origin</td>
+              <td>Treat CSV as PDF-origin values</td>
+              <td>When source is already PDF-space</td>
+            </tr>
+            <tr>
+              <td class="mono">csv-fit-*</td>
+              <td>Normalize CSV extents to viewport</td>
+              <td>When CSV is relative/trimmed or from raster extents</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Worked Example</h2>
+        <p>Example row from sample CSV:</p>
+        <div class="formula mono">
+          page=1, x0=384, y0=285, x1=510, y1=288
+        </div>
+        <p style="margin-top: 8px">With page size 3024x2160 and raw-top-left mapping at scale 1.0:</p>
+        <div class="formula mono">
+          rect.x = 384<br />
+          rect.top = 285<br />
+          rect.width = 126<br />
+          rect.height = 3
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Formula</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">x</td>
+              <td class="mono">min(x0, x1)</td>
+              <td class="mono">min(384,510) = 384</td>
+            </tr>
+            <tr>
+              <td class="mono">top</td>
+              <td class="mono">min(y0, y1)</td>
+              <td class="mono">min(285,288) = 285</td>
+            </tr>
+            <tr>
+              <td class="mono">width</td>
+              <td class="mono">abs(x1 - x0)</td>
+              <td class="mono">abs(510-384) = 126</td>
+            </tr>
+            <tr>
+              <td class="mono">height</td>
+              <td class="mono">abs(y1 - y0)</td>
+              <td class="mono">abs(288-285) = 3</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Cursor Coordinates</h2>
+        <p>Viewer always shows both coordinate spaces:</p>
+        <div class="formula mono">
+          cursor px: (cx, cy) | pdf: viewport.convertToPdfPoint(cx, cy)
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Troubleshooting Misaligned Boxes</h2>
+        <ul>
+          <li>If all CSV boxes are shifted but shape is correct: try <span class="mono">csv-fit</span> or <span class="mono">csv-fit-uniform</span>.</li>
+          <li>If boxes look mirrored vertically: try <span class="mono">csv-raw-top-left-yflip</span> or <span class="mono">csv-fit-uniform-yflip</span>.</li>
+          <li>If boxes are tiny/huge: verify CSV units and use <span class="mono">csv-raw-top-left</span> for page-unit data.</li>
+          <li>Use status line mapping scores to see which auto mode was selected and why.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <p><a href="./index.html">Back to viewer</a></p>
+      </section>
+    </main>
+  </body>
+</html>

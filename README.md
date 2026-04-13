@@ -1,81 +1,50 @@
-# PDF Coordinate Viewer
+# PDF BBox Viewer
 
-Standalone browser-based utility to inspect PDF detection bounding boxes (`bbox`) with robust coordinate mapping diagnostics.
+Offline PDF bounding-box viewer for detection JSON and CSV.
 
-No build step, no backend, no framework.
-
-## Features
-
-- Load a local PDF by path or file picker
-- Paste full JSON API responses directly into the app
-- Parse nested detection arrays (for example `result.doors`, `result.toilets`, and similar payloads)
-- Render pixel-aligned bbox overlays over a `pdf.js` canvas render
-- Zoom with `Ctrl/Cmd + wheel`
-- Page switcher, object list, and hover/click sync between sidebar and overlay
-- Live cursor readout in both canvas pixels and PDF coordinates
-- Automatic mapping fallback selection (`pdf-origin` vs `top-left-origin`) based on page ink scoring
-- On-screen debug status for scale, mapping mode, dimensions, ranges, and off-page counts
-
-## Tech Stack
-
-- **Language:** vanilla JavaScript (ES modules)
-- **PDF renderer:** `pdf.js` via CDN
-- **UI:** plain HTML + CSS
-- **Architecture:** static frontend app served over HTTP
-
-## Project Structure
-
-- `index.html` - UI layout, controls, and coordinate notes
-- `viewer.js` - PDF rendering pipeline, JSON parsing, bbox projection, and interactions
-- `styles.css` - UI styling
-- `data/doors-response.json` - sample JSON payload
-- `test-data/.gitkeep` - placeholder for local PDFs (actual PDFs are gitignored)
-- `assets/.gitkeep` - placeholder for screenshots/media
-
-## Quick Start
-
-1. Optional: place a local PDF in `test-data/` (for example `test-data/Doors-v1.pdf`).
-2. Start a static server from the repository root:
+## Run
 
 ```bash
 python3 -m http.server 8000
 ```
 
-3. Open [http://localhost:8000/](http://localhost:8000/).
-4. Paste detection JSON into **Detection JSON input**, or click **Load sample JSON**.
-5. Click **Load**.
+Open `http://localhost:8000/`.
 
-## npm Scripts (Optional)
+## What it does
 
-If you prefer starting with npm:
+- Load PDF from local path or file picker
+- Paste full JSON response into textarea
+- Load CSV detections (`x0,y0,x1,y1`) from file picker
+- Draw bbox overlays on top of PDF (`pdf.js`)
+- Zoom with `Ctrl/Cmd + wheel`
+- Switch pages, inspect object list, hover/click highlight sync
+- Show cursor in canvas px + PDF coordinates
+- Auto-pick mapping mode (`pdf-origin` vs `top-left-origin`) using ink score
 
-```bash
-npm run dev
-```
+## CSV shape
 
-This runs the same static server command (`python3 -m http.server 8000`).
+CSV should include:
 
-## Detection JSON Format
+- `x0,y0,x1,y1`
+- page column (`Document page number` or `page`) (optional, defaults to 1)
+- optional class/label columns (used as object type when present)
 
-The viewer scans JSON objects for arrays of entries containing:
+## JSON shape
+
+Any array item with:
 
 - `bbox: { x1, y1, x2, y2 }`
 - `page` or `page_number`
 - optional `id`
 
-Array names are normalized into object types in the UI (`doors` -> `door`, `toilets` -> `toilet`, and so on).
+Works for payloads like `result.doors`, `result.toilets`, etc.
 
-## Coordinate Mapping Notes
+## Notes
 
-- Primary projection uses `pdf.js` viewport transforms (`convertToViewportPoint`) from PDF-space coordinates.
-- A fallback top-left-origin projection is evaluated automatically.
-- The viewer compares both mappings using an ink-based score and keeps the best-fit mode for each rendered page.
-- Debug info in the status line helps explain alignment outcomes.
-
-## Contributing
-
-Contributions are welcome. Please review `CONTRIBUTING.md` for workflow and style expectations.
+- Sample package (PDF + CSV): `sample_data/`
+- Local PDFs should go in `test-data/` (gitignored)
+- Optional: `npm run dev` (same as Python static server)
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE`.
+MIT (`LICENSE`)

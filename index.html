@@ -6,79 +6,146 @@
     <title>PDF BBox Viewer</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
-    <header>
-      <h1>PDF Bounding Box Viewer</h1>
-      <p>Load a local PDF + AnchorGrid response JSON and visualize detections.</p>
+  <body data-theme="light">
+    <header class="app-header">
+      <div>
+        <h1>PDF BBox Viewer</h1>
+        <p>Inspect PDF coordinates and detection overlays offline.</p>
+      </div>
+      <div class="header-actions">
+        <button id="docsBtn" class="secondary-btn" type="button">Docs</button>
+        <button id="themeToggleBtn" class="secondary-btn" type="button">Light mode</button>
+        <button id="togglePanelBtn" class="secondary-btn" type="button">Hide objects</button>
+      </div>
     </header>
 
-    <section class="controls">
-      <label>
-        PDF path:
-        <input id="pdfPath" type="text" value="./test-data/Doors-v1.pdf" />
-      </label>
-      <div class="file-picker">
-        <button id="choosePdfBtn" type="button">Choose PDF</button>
-        <span id="pdfFileName" class="file-name">none</span>
-        <input id="pdfFile" class="hidden-input" type="file" accept=".pdf,application/pdf" />
-      </div>
-      <label>
-        Scale:
-        <input id="scaleInput" type="number" step="0.1" min="0.2" max="4" value="1.0" />
-      </label>
-      <button id="loadSampleBtn" type="button">Load sample JSON</button>
-      <button id="loadBtn">Load</button>
-    </section>
-
-    <section class="json-input-wrap">
-      <label for="jsonInput">Detection JSON input</label>
-      <textarea
-        id="jsonInput"
-        spellcheck="false"
-        placeholder='Paste full API response or an object list with bbox/page fields...'
-      ></textarea>
-      <p class="hint">
-        Supports full response payloads (`result.doors`, `result.toilets`, etc.) or any arrays of objects containing
-        `bbox: {x1,y1,x2,y2}` and `page`.
-      </p>
-    </section>
-
-    <section class="controls">
-      <label>
-        Page:
-        <select id="pageSelect"></select>
-      </label>
-      <label>
-        Show labels:
-        <input id="showLabels" type="checkbox" checked />
-      </label>
-      <span id="cursorCoords" class="coords"></span>
-      <span id="summary"></span>
-    </section>
-
-    <section class="docs-note">
-      <h3>How coordinates are detected</h3>
-      <p>
-        AnchorGrid detections are returned in PDF points. The model runs on a high-resolution internal render, then
-        maps detections back to PDF space (`x1`, `y1`, `x2`, `y2`). This viewer projects those PDF points into screen
-        pixels with `pdf.js` (`convertToViewportPoint`) and draws overlays at the transformed coordinates.
-      </p>
-    </section>
-
     <main>
-      <div class="split">
-        <div id="viewerWrap" class="viewer-wrap">
-          <canvas id="pdfCanvas"></canvas>
-          <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
-          <div id="loader" class="loader hidden">
-            <div class="spinner"></div>
-            <span>Loading PDF...</span>
-          </div>
-        </div>
+      <div class="workspace">
+        <aside class="left-sidebar">
+          <section class="side-block">
+            <h3>Document</h3>
+            <label>
+              PDF path
+              <input id="pdfPath" type="text" value="./test-data/Doors-v1.pdf" />
+            </label>
+            <div class="file-picker">
+              <button id="choosePdfBtn" type="button">Choose PDF</button>
+              <span id="pdfFileName" class="file-name">none</span>
+              <input id="pdfFile" class="hidden-input" type="file" accept=".pdf,application/pdf" />
+            </div>
+          </section>
 
-        <aside class="side-panel">
+          <section class="side-block">
+            <h3>View</h3>
+            <div class="row">
+              <label>
+                Scale
+                <input id="scaleInput" type="number" step="0.1" min="0.2" max="6" value="1.0" />
+              </label>
+            </div>
+            <div class="pager-controls">
+              <button id="prevPageBtn" class="secondary-btn" type="button">Prev page</button>
+              <select id="pageSelect"></select>
+              <button id="nextPageBtn" class="secondary-btn" type="button">Next page</button>
+            </div>
+            <div id="pageIndicator" class="page-indicator">Page - / -</div>
+            <p class="hint-inline">Shortcuts: `[` / `]` or Arrow Left / Arrow Right</p>
+            <div class="row">
+              <label>
+                Mapping
+                <select id="mappingMode">
+                  <option value="auto">Auto</option>
+                  <option value="pdf-origin">PDF origin</option>
+                  <option value="top-left-origin">Top-left origin</option>
+                  <option value="csv-raw-top-left">CSV raw top-left</option>
+                  <option value="csv-raw-top-left-yflip">CSV raw top-left + Y flip</option>
+                  <option value="csv-raw-pdf-origin">CSV raw PDF origin</option>
+                  <option value="csv-max">CSV max-scale</option>
+                  <option value="csv-fit">CSV fit-stretch</option>
+                  <option value="csv-fit-uniform">CSV fit-uniform</option>
+                  <option value="csv-fit-uniform-yflip">CSV fit-uniform + Y flip</option>
+                </select>
+              </label>
+            </div>
+            <div class="toggles">
+              <label class="inline-option">
+                <input id="showLabels" type="checkbox" checked />
+                Show labels
+              </label>
+              <label class="inline-option">
+                <input id="showCursorGuide" type="checkbox" checked />
+                Highlight cursor point
+              </label>
+            </div>
+            <div class="row buttons-row">
+              <button id="fitPageBtn" class="secondary-btn" type="button">Fit page</button>
+              <button id="resetZoomBtn" class="secondary-btn" type="button">Reset zoom</button>
+              <button id="loadBtn" type="button">Load</button>
+            </div>
+          </section>
+
+          <section class="side-block sources-block">
+            <div class="section-title-wrap">
+              <h3>Detection Sources</h3>
+              <span class="hint-inline">Choose one input type.</span>
+            </div>
+            <div class="source-mode-switch" role="tablist" aria-label="Detection input mode">
+              <button id="sourceModeJsonBtn" class="mode-btn active" type="button" role="tab" aria-selected="true">
+                JSON
+              </button>
+              <button id="sourceModeCsvBtn" class="mode-btn" type="button" role="tab" aria-selected="false">
+                CSV
+              </button>
+            </div>
+
+            <div id="jsonSourcePanel" class="input-source">
+              <h4>JSON input</h4>
+              <textarea
+                id="jsonInput"
+                spellcheck="false"
+                placeholder="Paste full API response or simple array of objects with bbox fields."
+              ></textarea>
+              <div id="jsonStats" class="parse-stats muted">No JSON parsed yet.</div>
+              <ul id="jsonWarnings" class="parse-warnings"></ul>
+            </div>
+
+            <div id="csvSourcePanel" class="input-source csv-source hidden">
+              <h4>CSV input</h4>
+              <p class="hint-inline">Expected columns: x0,y0,x1,y1 (+ optional page/class columns).</p>
+              <div class="csv-import">
+                <button id="chooseCsvBtn" class="csv-upload-btn" type="button">
+                  <span class="upload-glyph" aria-hidden="true">+</span>
+                  <span>Upload CSV File</span>
+                </button>
+                <span id="csvStatusPill" class="csv-status-pill">No CSV</span>
+                <input id="csvFile" class="hidden-input" type="file" accept=".csv,text/csv" />
+              </div>
+              <div id="csvFileName" class="csv-file-line">No file selected.</div>
+              <div id="csvStats" class="parse-stats muted">No CSV selected.</div>
+              <ul id="csvWarnings" class="parse-warnings"></ul>
+            </div>
+          </section>
+
+        </aside>
+
+        <section id="viewerPane" class="viewer-pane">
+          <div id="viewerWrap" class="viewer-wrap">
+            <canvas id="pdfCanvas"></canvas>
+            <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+            <div id="loader" class="loader hidden">
+              <div class="spinner"></div>
+              <span>Rendering PDF...</span>
+            </div>
+          </div>
+          <div class="status-line">
+            <span id="cursorCoords" class="coords"></span>
+            <span id="summary"></span>
+          </div>
+        </section>
+
+        <aside id="sidePanel" class="side-panel">
           <h3>Objects</h3>
-          <p class="muted">Hover a box to highlight coordinates here.</p>
+          <p class="muted">Hover or click boxes to inspect exact values.</p>
           <ul id="objectList" class="object-list"></ul>
 
           <h3>Selected</h3>
