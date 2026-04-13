@@ -1,10 +1,7 @@
 # PDF BBox Viewer
 
 Offline PDF bounding-box viewer for detection JSON and CSV.
-
-<img width="2994" height="1702" alt="PDF BBox Viewer screenshot" src="https://github.com/user-attachments/assets/af0977f8-05ee-4a74-bc30-f612f05aed8f" />
-
-**Links:** [Live site (GitHub Pages)](https://sova-claw.github.io/PDF-Bbox-Viewer/) · [Repository](https://github.com/sova-claw/PDF-Bbox-Viewer) · [Coordinate mapping notes](https://sova-claw.github.io/PDF-Bbox-Viewer/docs.html)
+<img width="2994" height="1702" alt="CleanShot 2026-04-13 at 23 57 27@2x" src="https://github.com/user-attachments/assets/af0977f8-05ee-4a74-bc30-f612f05aed8f" />
 
 ## Run
 
@@ -47,10 +44,6 @@ Works for payloads like `result.doors`, `result.toilets`, etc.
 - Sample package (PDF + CSV): `sample_data/`
 - Local PDFs should go in `test-data/` (gitignored)
 - Optional: `npm run dev` (same as Python static server)
-
-## Status
-
-Feature-complete for local debugging and API validation: static app, no build step. Further work is optional (small fixes, samples); no active roadmap.
 
 ## License
 
